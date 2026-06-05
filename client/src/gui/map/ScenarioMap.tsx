@@ -71,6 +71,9 @@ import { SetSimulationLogsContext } from "@/gui/contextProviders/contexts/Simula
 import SimulationLogs from "@/gui/map/toolbar/SimulationLogs";
 import { SetScenarioSidesContext } from "@/gui/contextProviders/contexts/ScenarioSidesContext";
 import { SideDoctrine } from "@/game/Doctrine";
+import AgentService, {
+  AgentConnectionStatus,
+} from "@/game/agent/AgentService";
 
 interface ScenarioMapProps {
   zoom: number;
@@ -86,6 +89,8 @@ interface IOpenMultipleFeatureSelector {
   left: number;
   features: Feature<Geometry>[];
 }
+
+const DEFAULT_AGENT_URL = "ws://localhost:8765";
 
 const Main = styled("main", { shouldForwardProp: (prop) => prop !== "open" })<{
   open?: boolean;
@@ -161,6 +166,10 @@ export default function ScenarioMap({
   const [recordingPlayerHasRecording, setRecordingPlayerHasRecording] =
     useState(game.recordingPlayer.hasRecording());
   const [currentSideId, setCurrentSideId] = useState(game.currentSideId);
+  const agentServiceRef = useRef(new AgentService());
+  const [agentConnectionStatus, setAgentConnectionStatus] =
+    useState<AgentConnectionStatus>("disconnected");
+  const [agentUrl, setAgentUrl] = useState(DEFAULT_AGENT_URL);
   const [openAircraftCard, setOpenAircraftCard] = useState({
     open: false,
     top: 0,
@@ -1055,14 +1064,78 @@ export default function ScenarioMap({
     loadAndDisplayCurrentRecordedFrame(true);
   }
 
+  async function handleConnectAgent(url: string) {
+    const nextAgentUrl = url.trim() || DEFAULT_AGENT_URL;
+    setAgentUrl(nextAgentUrl);
+    setAgentConnectionStatus("connecting");
+
+    try {
+      await agentServiceRef.current.connect(nextAgentUrl);
+      setAgentConnectionStatus("connected");
+      toastContext?.addToast("AI Agent connected.", "success");
+    } catch (error) {
+      setAgentConnectionStatus("error");
+      toastContext?.addToast(
+        error instanceof Error ? error.message : "Failed to connect AI Agent.",
+        "error"
+      );
+    }
+  }
+
+  function handleDisconnectAgent() {
+    agentServiceRef.current.disconnect();
+    setAgentConnectionStatus("disconnected");
+    toastContext?.addToast("AI Agent disconnected.", "info");
+  }
+
+  async function requestAndApplyAgentAction(observation: Scenario) {
+    if (agentServiceRef.current.status !== "connected") return;
+
+    const extractedObservation =
+      agentServiceRef.current.extractObservation(observation);
+    if (!extractedObservation) return;
+
+    try {
+      const agentAction = await agentServiceRef.current.requestAction(
+        extractedObservation.observation,
+        extractedObservation.aircraft.id
+      );
+      const agentAircraft = game.currentScenario.getAircraft(
+        agentAction.aircraftId
+      );
+      if (agentAircraft) {
+        agentAircraft.route = [];
+        agentAircraft.desiredRoute = [];
+      }
+      const updatedAircraft = game.moveAircraft(
+        agentAction.aircraftId,
+        agentAction.destination.latitude,
+        agentAction.destination.longitude
+      );
+      if (updatedAircraft) {
+        updatedAircraft.route = updatedAircraft.desiredRoute;
+        updatedAircraft.desiredRoute = [];
+      }
+      drawNextFrame(game.currentScenario);
+    } catch (error) {
+      agentServiceRef.current.disconnect();
+      setAgentConnectionStatus("error");
+      toastContext?.addToast(
+        error instanceof Error ? error.message : "AI Agent request failed.",
+        "error"
+      );
+    }
+  }
+
   async function handlePlayGameClick() {
     game.recordStep(true);
     setCurrentGameStatusToContext("Scenario playing");
     game.scenarioPaused = false;
     let gameEnded = game.checkGameEnded();
     while (!game.scenarioPaused && !gameEnded) {
-      const [_observation, _reward, terminated, truncated, _info] =
+      const [observation, _reward, terminated, truncated, _info] =
         stepGameAndDrawFrame();
+      await requestAndApplyAgentAction(observation);
 
       const status = terminated || truncated;
       gameEnded = status as boolean;
@@ -1083,7 +1156,7 @@ export default function ScenarioMap({
     return [observation, reward, terminated, truncated, info];
   }
 
-  function stepGameAndDrawFrame() {
+  function stepGameAndDrawFrame(): [Scenario, number, boolean, boolean, null] {
     // const gameStepStartTime = new Date().getTime();
     const [observation, reward, terminated, truncated, info] =
       stepGameForStepSize(game.currentScenario.timeCompression);
@@ -2247,6 +2320,10 @@ export default function ScenarioMap({
         updateCurrentScenarioTimeToContext={() => {
           setCurrentScenarioTimeToContext(game.currentScenario.currentTime);
         }}
+        agentConnectionStatus={agentConnectionStatus}
+        agentUrl={agentUrl}
+        connectAgentOnClick={handleConnectAgent}
+        disconnectAgentOnClick={handleDisconnectAgent}
         scenarioTimeCompression={currentScenarioTimeCompression}
         scenarioCurrentSideId={currentSideId}
         game={game}

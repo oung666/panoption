@@ -5,7 +5,7 @@ import ScenarioMap from "@/gui/map/ScenarioMap";
 import Scenario from "@/game/Scenario";
 import Game from "@/game/Game";
 import { DEFAULT_OL_PROJECTION_CODE } from "@/utils/constants";
-import SCSScenarioJson from "@/scenarios/SCS.json";
+import agentValidationScenarioJson from "@/scenarios/agent_validation_scenario.json";
 import Box from "@mui/material/Box";
 import { useMediaQuery } from "@mui/material";
 import WelcomePopover from "@/WelcomePopover";
@@ -33,7 +33,7 @@ export default function App() {
   const theGame = new Game(currentScenario);
   const projection = getProjection(DEFAULT_OL_PROJECTION_CODE) ?? undefined;
 
-  theGame.loadScenario(JSON.stringify(SCSScenarioJson)); // loads default scenario for easier testing
+  theGame.loadScenario(JSON.stringify(agentValidationScenarioJson)); // loads default scenario for easier testing
 
   return (
     <Box className="App" sx={{ display: "flex" }}>

@@ -44,6 +44,7 @@ import {
   Pause,
   PlayArrow,
   Save,
+  SmartToy,
   Storage,
   Undo,
 } from "@mui/icons-material";
@@ -66,6 +67,7 @@ import RecordingPlayer from "@/gui/map/toolbar/RecordingPlayer";
 import blankScenarioJson from "@/scenarios/blank_scenario.json";
 import defaultScenarioJson from "@/scenarios/default_scenario.json";
 import SCSScenarioJson from "@/scenarios/SCS.json";
+import agentValidationScenarioJson from "@/scenarios/agent_validation_scenario.json";
 import SideSelect from "@/gui/map/toolbar/SideSelect";
 import {
   COLOR_PALETTE,
@@ -81,6 +83,7 @@ import {
   SetUnitDbContext,
   UnitDbContext,
 } from "@/gui/contextProviders/contexts/UnitDbContext";
+import { AgentConnectionStatus } from "@/game/agent/AgentService";
 
 interface ToolBarProps {
   mobileView: boolean;
@@ -115,6 +118,10 @@ interface ToolBarProps {
   loadFeatureEntitiesState: () => void;
   updateScenarioTimeCompression: (scenarioTimeCompression: number) => void;
   updateCurrentScenarioTimeToContext: () => void;
+  agentConnectionStatus: AgentConnectionStatus;
+  agentUrl: string;
+  connectAgentOnClick: (url: string) => void;
+  disconnectAgentOnClick: () => void;
   scenarioTimeCompression: number;
   scenarioCurrentSideId: string;
   game: Game;
@@ -548,6 +555,10 @@ export default function Toolbar(props: Readonly<ToolBarProps>) {
         scenarioJson = SCSScenarioJson;
         handleLoadScenarioIconClose();
         break;
+      case "agent_validation_scenario":
+        scenarioJson = agentValidationScenarioJson;
+        handleLoadScenarioIconClose();
+        break;
       case "_upload":
         handleLoadScenarioIconClose();
         uploadScenario();
@@ -563,6 +574,7 @@ export default function Toolbar(props: Readonly<ToolBarProps>) {
         if (
           presetScenarioName === "blank_scenario" ||
           presetScenarioName === "SCS" ||
+          presetScenarioName === "agent_validation_scenario" ||
           presetScenarioName === "default_scenario"
         ) {
           if (scenarioJsonWithNewId.currentScenario?.id) {
@@ -691,6 +703,51 @@ export default function Toolbar(props: Readonly<ToolBarProps>) {
   const handleStepClick = () => {
     setScenarioPaused(true);
     props.stepOnClick();
+  };
+
+  const handleAgentClick = () => {
+    if (
+      props.agentConnectionStatus === "connected" ||
+      props.agentConnectionStatus === "connecting"
+    ) {
+      props.disconnectAgentOnClick();
+      return;
+    }
+
+    const agentUrl = window.prompt("AI Agent WebSocket URL", props.agentUrl);
+    if (agentUrl !== null) {
+      props.connectAgentOnClick(agentUrl);
+    }
+  };
+
+  const getAgentStatusLabel = () => {
+    switch (props.agentConnectionStatus) {
+      case "connected":
+        return "Agent On";
+      case "connecting":
+        return "Agent...";
+      case "error":
+        return "Agent Error";
+      default:
+        return "Agent Off";
+    }
+  };
+
+  const getAgentStatusColor = ():
+    | "default"
+    | "success"
+    | "warning"
+    | "error" => {
+    switch (props.agentConnectionStatus) {
+      case "connected":
+        return "success";
+      case "connecting":
+        return "warning";
+      case "error":
+        return "error";
+      default:
+        return "default";
+    }
   };
 
   const handleUnitClassSelect = (
@@ -846,6 +903,7 @@ export default function Toolbar(props: Readonly<ToolBarProps>) {
   const ScenarioDb = [
     { name: "default_scenario", displayName: "Panopticon Demo" },
     { name: "SCS", displayName: "South China Sea Strike" },
+    { name: "agent_validation_scenario", displayName: "RL Agent Validation" },
     { name: "_upload", displayName: "Upload..." },
   ];
 
@@ -1806,6 +1864,16 @@ export default function Toolbar(props: Readonly<ToolBarProps>) {
                   <IconButton onClick={handlePlayClick}>
                     {!scenarioPaused ? <Pause /> : <PlayArrow />}
                   </IconButton>
+                </Tooltip>
+                <Tooltip title="Connect or disconnect AI Agent">
+                  <Chip
+                    icon={<SmartToy />}
+                    label={getAgentStatusLabel()}
+                    color={getAgentStatusColor()}
+                    variant="outlined"
+                    onClick={handleAgentClick}
+                    sx={{ minWidth: "104px" }}
+                  />
                 </Tooltip>
                 <Tooltip title="Toggle Scenario Speed">
                   <Chip
